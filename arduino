@@ -1,0 +1,115 @@
+#include <PowerFunctions.h>
+ 
+#define IR_TRANS_IN   2  //IR 트랜스 핀으로 정의한다
+#define IR_DEBUG_OFF  0  //IR 디버그 모드 OFF  으로 정의한다
+#define IR_DEBUG_ON   1  //IR 디버그 모드 ON 으로 정의한다
+ 
+//IR Channels
+#define CH1 0x0
+#define CH2 0x1
+#define CH3 0x2
+#define CH4 0x3
+ 
+#define TRIGGER_PIN   8  // 트리거 핀 = 초음파 센서 출력핀으로 정의한다
+#define ECHO_PIN      9  // 에코 핀 = 초음파 센서 입력핀으로 정의한다
+#define NEAREST_VALUE 50 // 최대 속도거리 (mm)으로 정의한다
+#define OFFSET        60 // 속도 간 거리 (mm)으로 정의한다
+ 
+long lDistance     = 0;  // 거리 (mm)
+long lBeforeValue  = 0;  // 측정 전 거리 값
+long lCurrentValue = 1;  // 측정 전 거리 값
+int forceStopValue = 0;  // 주기적으로 정지 신호를 전송하는 값
+ 
+PowerFunctions pf(IR_TRANS_IN, CH1, IR_DEBUG_ON);
+ 
+void setup() {
+  pinMode(TRIGGER_PIN, OUTPUT); // 트리거 = 출력 핀
+  pinMode(ECHO_PIN,     INPUT); // 에코 = 입력 핀
+  Serial.begin(9600); // 시리얼 출력
+}
+ 
+void loop() {
+  lDistance = getDistance();
+  Serial.print("Distance = "); // 시리얼 출력
+  Serial.print(lDistance);
+  Serial.print("mm");
+ 
+  operateTrain(RED, lDistance);
+  Serial.println();
+ 
+  delay(100); // 지연시간
+}
+ 
+// 초음파 센서(HC-SR04)를 사용한 거리 확보
+long getDistance()
+{
+  long distance  = 0;
+  long duration = 0;
+ 
+  digitalWrite(TRIGGER_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIGGER_PIN, HIGH); // 출력을 높게
+  delayMicroseconds(10); // 10us high
+  digitalWrite(TRIGGER_PIN, LOW); // 출력을 낮게
+ 
+  duration = pulseIn(ECHO_PIN, HIGH); // 에코 핀이 높아질 때까지 대기
+  // 지속시간단위을 마이크로초 단위로 반환
+ 
+ // 거리 계산 (mm)
+// (시간)*(소리의 속도)/ 물체의 앞뒤로) * 10
+  distance = ((duration / 2.9) / 2); // 실제 거리 계산 (mm)
+  //distance = duration / 74 / 2; // 인치단위로의 거리 계산 (mm)
+ 
+  return distance;
+}
+ 
+ 
+// IR 송신기를 이용한 열차작동 (Keyes KY-005)
+void operateTrain(uint8_t output, long lDistance) {
+ 
+  if (lDistance > 0 && lDistance < NEAREST_VALUE) {
+    lCurrentValue = PWM_FWD7;
+  }
+  else if (lDistance >= NEAREST_VALUE && lDistance < NEAREST_VALUE + OFFSET) {
+    lCurrentValue = PWM_FWD6;
+  }
+  else if (lDistance >= NEAREST_VALUE + OFFSET && lDistance < NEAREST_VALUE + OFFSET * 2) {
+    lCurrentValue = PWM_FWD5;
+  }
+  else if (lDistance >= NEAREST_VALUE + OFFSET * 2 && lDistance < NEAREST_VALUE + OFFSET * 3) {
+    lCurrentValue = PWM_FWD4;
+  }
+  else if (lDistance >= NEAREST_VALUE + OFFSET * 3 && lDistance < NEAREST_VALUE + OFFSET * 4) {
+    lCurrentValue = PWM_FWD3;
+  }
+  else if (lDistance >= NEAREST_VALUE + OFFSET * 4 && lDistance < NEAREST_VALUE + OFFSET * 5) {
+    lCurrentValue = PWM_FWD2;
+  }
+  else if (lDistance >= NEAREST_VALUE + OFFSET * 5 && lDistance < NEAREST_VALUE + OFFSET * 6) {
+    lCurrentValue = PWM_FWD1;
+  }
+  else if ( lDistance >= NEAREST_VALUE + OFFSET * 6)
+  {
+    lCurrentValue = PWM_BRK;
+  }
+ 
+  Serial.print(" PWM_CODE : ");
+  Serial.print(lCurrentValue);
+  if (lCurrentValue != lBeforeValue)
+  {
+    pf.single_pwm(output, lCurrentValue);
+    Serial.print(" IR_SIGNAL_SENT");
+  }
+  lBeforeValue = lCurrentValue;
+ 
+  forceStopValue++;
+ 
+  if (forceStopValue > 100) {
+    if ( lCurrentValue == PWM_BRK )
+    {
+      pf.single_pwm(output, lCurrentValue);
+      Serial.print(" PERIODICALLY_PWM_BRK_SENT");
+    }
+    forceStopValue = 0;
+  }
+}
